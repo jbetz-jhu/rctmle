@@ -593,9 +593,6 @@ impute_beta <-
     imputation_models <- list()
     
     for(i in 1:length(impute_formulas)){
-      
-      ## HERE ###
-      
       # If scale is modeled, adjust formula accordingly
       if(model_scale){
         model_rhs <-
@@ -649,7 +646,7 @@ impute_beta <-
       if(verbose) imputation_parameters[[i]] <- beta_params
       
       # Sample in imputed values
-      data[which(impute_columns[,i]), var_to_impute] <-
+      data[which(impute_columns[,i]), impute_formula_lhs[i]] <-
         rbeta(
           n = n_to_impute[i],
           shape1 = beta_params$alpha,
