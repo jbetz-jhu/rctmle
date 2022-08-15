@@ -1,5 +1,5 @@
 library(mvtnorm) # for rmvnorm in iid_centered_mvn()
-library(betareg) # for impute_monotone_beta
+library(mgcv) # for impute_monotone_beta
 library(nnet) # for impute_monotone_multinomial
 library(boot) # for tmle - bootstrap inference
 
