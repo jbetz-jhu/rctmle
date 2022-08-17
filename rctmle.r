@@ -1311,7 +1311,7 @@ tmle_get_formulas <-
       outcome_formulas[[i]] <-
         reformulate(
           termlabels =
-            Reduce(paste, deparse(tail(inverse_weight_formulas[[i]], 1)[[1]])),
+            Reduce(paste, deparse(tail(outcome_formulas[[i]], 1)[[1]])),
           response =
             paste0("..", y_columns[i])
         )
@@ -1340,6 +1340,7 @@ tmle_compute <-
     inverse_weight_formulas,
     outcome_formulas,
     outcome_type,
+    estimand,
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
@@ -1471,7 +1472,7 @@ tmle_compute <-
           formula = outcome_formulas[[i]],
           data = data[uncensored, ],
           family = glm_family,
-          weights = ..ipw
+          weights = data[uncensored,]$..ipw
         )
       
       if(verbose) regression_sequence[[i]] <- outcome_regression
@@ -1531,8 +1532,14 @@ tmle_compute <-
         )
     }
     
-    ate <-
-      mean(y_tx_1) - mean(y_tx_0)
+    if(estimand == "difference"){
+      ate <- mean(y_tx_1) - mean(y_tx_0)
+    } else if (estimand == "ratio"){
+      ate <- mean(y_tx_1)/mean(y_tx_0)
+    } else if (estimand == "oddsratio"){
+      ate <- mean(y_tx_1)*(1 - mean(y_tx_0))/(mean(y_tx_0)*(1 - mean(y_tx_1)))
+    }
+    
     
     if(verbose){
       return(
@@ -1594,11 +1601,8 @@ rctmle <-
     propensity_score_formula,
     inverse_weight_formulas,
     outcome_formulas,
-    outcome_type =
-      c("gaussian",
-        "logistic",
-        "binomial",
-        "multinomial-binomial")[1],
+    outcome_type,
+    estimand = "difference",
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
@@ -1714,6 +1718,7 @@ rctmle <-
           outcome_formulas =
             tmle_formulas$outcome_formulas,
           outcome_type = outcome_type,
+          estimand = estimand,
           outcome_range = outcome_range,
           absorbing_state = absorbing_state,
           absorbing_outcome = absorbing_outcome,

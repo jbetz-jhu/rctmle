@@ -88,9 +88,9 @@ propensity_score_formula <-
 
 inverse_weight_formulas <-
   list(
-    ~ x_1 + x_2 + x_3 + x_4,
-    ~ x_1 + x_2 + x_3 + x_4 + y_obs_1,
-    ~ x_1 + x_2 + x_3 + x_4 + y_obs_1 + y_obs_2
+    ~ x_1 + x_2 + x_3 + x_4 + tx,
+    ~ x_1 + x_2 + x_3 + x_4 + tx + y_obs_1,
+    ~ x_1 + x_2 + x_3 + x_4 + tx + y_obs_1 + y_obs_2
   )
 
 
@@ -100,175 +100,397 @@ inverse_weight_formulas <-
 
 outcome_formulas <-
   list(
-    y_obs_1 ~ x_1 + x_2 + x_3 + x_4,
-    y_obs_2 ~ x_1 + x_2 + x_3 + x_4 + y_obs_1,
-    y_obs_3 ~ x_1 + x_2 + x_3 + x_4 + y_obs_1 + y_obs_2
+    y_obs_1 ~ x_1 + x_2 + x_3 + x_4 + tx,
+    y_obs_2 ~ x_1 + x_2 + x_3 + x_4 + tx + y_obs_1,
+    y_obs_3 ~ x_1 + x_2 + x_3 + x_4 + tx + y_obs_1 + y_obs_2
   )
 
 impute_formulas <-
   list(
-    y_obs_1 ~ x_1 + x_2 + x_3 + x_4,
-    y_obs_2 ~ x_1 + x_2 + x_3 + x_4 + y_obs_1
+    y_obs_1 ~ x_1 + x_2 + x_3 + x_4 + tx,
+    y_obs_2 ~ x_1 + x_2 + x_3 + x_4 + tx + y_obs_1
   )
 
+test_1_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "gaussian",
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = gaussian(link = "identity")
+      ),
+    verbose = TRUE
+  )
 
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "gaussian",
-  impute_formulas = impute_formulas,
-  impute_model = "pmm",
-  imputation_args = 
-    list(
-      family = gaussian(link = "identity")
-    ),
-  verbose = TRUE
-)
+test_1_diff$ate
+
+
+test_1_ratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "gaussian",
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = gaussian(link = "identity")
+      ),
+    verbose = TRUE
+  )
+
+test_1_ratio$ate
 
 
 ### 2. Continous - Impute Parametric - Gaussian/Log ###########################
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "gaussian",
-  impute_formulas = impute_formulas,
-  impute_model = "gaussian",
-  imputation_args = 
-    list(
-      family = gaussian(link = "log")
-    ),
-  verbose = TRUE
-)
+test_2_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "gaussian",
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "gaussian",
+    imputation_args = 
+      list(
+        family = gaussian(link = "log")
+      ),
+    verbose = TRUE
+  )
+
+test_2_diff$ate
+
+
+test_2_ratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "gaussian",
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "gaussian",
+    imputation_args = 
+      list(
+        family = gaussian(link = "log")
+      ),
+    verbose = TRUE
+  )
+
+test_2_ratio$ate
 
 
 ### 3. Continous - Impute PMM - Gaussian/Log ###################################
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "gaussian",
-  impute_formulas = impute_formulas,
-  impute_model = "pmm",
-  imputation_args = 
-    list(
-      family = quasipoisson(link = "log")
-    ),
-  verbose = TRUE
-)
+test_3_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "gaussian",
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = quasipoisson(link = "log")
+      ),
+    verbose = TRUE
+  )
+
+test_3_diff$ate
+
+
+test_3_ratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "gaussian",
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = quasipoisson(link = "log")
+      ),
+    verbose = TRUE
+  )
+
+test_3_ratio$ate
 
 
 ### 4. Logistic - Impute PMM - Quasibinomial/Logit #############################
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "logistic",
-  outcome_range = c(y_min, y_max),
-  impute_formulas = impute_formulas,
-  impute_model = "pmm",
-  imputation_args = 
-    list(
-      family = quasibinomial(link = "logit")
-    ),
-  verbose = TRUE
-)
+test_4_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = quasibinomial(link = "logit")
+      ),
+    verbose = TRUE
+  )
+
+test_4_diff$ate
+
+
+test_4_ratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = quasibinomial(link = "logit")
+      ),
+    verbose = TRUE
+  )
+
+test_4_ratio$ate
 
 
 ### 5. Logistic - Impute PMM - Quasi: Logit, Var = mu(1-mu) ####################
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "logistic",
-  outcome_range = c(y_min, y_max),
-  impute_formulas = impute_formulas,
-  impute_model = "pmm",
-  imputation_args = 
-    list(
-      family = quasi(link = "logit", variance = "mu(1-mu)")
-    ),
-  verbose = TRUE
-)
+test_5_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = quasi(link = "logit", variance = "mu(1-mu)")
+      ),
+    verbose = TRUE
+  )
+
+test_5_diff$ate
+
+
+
+test_5_ratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = quasi(link = "logit", variance = "mu(1-mu)")
+      ),
+    verbose = TRUE
+  )
+
+test_5_ratio$ate
+
 
 
 ### 6. Logistic - Impute PMM - Beta/Logit ######################################
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "logistic",
-  outcome_range = c(y_min, y_max),
-  impute_formulas = impute_formulas,
-  impute_model = "pmm",
-  imputation_args = 
-    list(
-      family = betar,
-      link = "logit"
-    ),
-  verbose = TRUE
-)
+test_6_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = betar,
+        link = "logit"
+      ),
+    verbose = TRUE
+  )
+
+test_6_diff$ate
+
+
+test_6_ratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "pmm",
+    imputation_args = 
+      list(
+        family = betar,
+        link = "logit"
+      ),
+    verbose = TRUE
+  )
+
+test_6_ratio$ate
 
 
 ### 7. Logistic - Impute Beta/Logit ############################################
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "logistic",
-  outcome_range = c(y_min, y_max),
-  impute_formulas = impute_formulas,
-  impute_model = "beta",
-  imputation_args = 
-    list(
-      family = betar,
-      link = "logit"
-    ),
-  verbose = TRUE
-)
+test_7_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "beta",
+    imputation_args = 
+      list(
+        family = betar,
+        link = "logit"
+      ),
+    verbose = TRUE
+  )
+
+test_7_diff$ate
+
+
+test_7_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "logistic",
+    outcome_range = c(y_min, y_max),
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "beta",
+    imputation_args = 
+      list(
+        family = betar,
+        link = "logit"
+      ),
+    verbose = TRUE
+  )
+
+test_7_diff$ate
 
 
 ### 8. Binomial - Impute Binomial/Logit ########################################
 outcome_formulas <-
   list(
-    y_bin_obs_1 ~ x_1 + x_2 + x_3 + x_4,
-    y_bin_obs_2 ~ x_1 + x_2 + x_3 + x_4 + y_bin_obs_1,
-    y_bin_obs_3 ~ x_1 + x_2 + x_3 + x_4 + y_bin_obs_1 + y_bin_obs_2
+    y_bin_obs_1 ~ x_1 + x_2 + x_3 + x_4 + tx,
+    y_bin_obs_2 ~ x_1 + x_2 + x_3 + x_4 + tx + y_bin_obs_1,
+    y_bin_obs_3 ~ x_1 + x_2 + x_3 + x_4 + tx + y_bin_obs_1 + y_bin_obs_2
   )
 
 impute_formulas <-
   list(
-    y_bin_obs_1 ~ x_1 + x_2 + x_3 + x_4,
-    y_bin_obs_2 ~ x_1 + x_2 + x_3 + x_4 + y_bin_obs_1
+    y_bin_obs_1 ~ x_1 + x_2 + x_3 + x_4 + tx,
+    y_bin_obs_2 ~ x_1 + x_2 + x_3 + x_4 + tx + y_bin_obs_1
   )
 
 inverse_weight_formulas <-
   list(
-    ~ x_1 + x_2 + x_3 + x_4,
-    ~ x_1 + x_2 + x_3 + x_4 + y_bin_obs_1,
-    ~ x_1 + x_2 + x_3 + x_4 + y_bin_obs_1 + y_bin_obs_2
+    ~ x_1 + x_2 + x_3 + x_4 + tx,
+    ~ x_1 + x_2 + x_3 + x_4 + tx + y_bin_obs_1,
+    ~ x_1 + x_2 + x_3 + x_4 + tx + y_bin_obs_1 + y_bin_obs_2
   )
 
-rctmle(
-  data = sim_data,
-  propensity_score_formula = propensity_score_formula,
-  inverse_weight_formulas = inverse_weight_formulas,
-  outcome_formulas = outcome_formulas,
-  outcome_type = "binomial",
-  impute_formulas = impute_formulas,
-  impute_model = "binomial",
-  imputation_args = 
-    list(
-      family = binomial,
-      link = "logit"
-    ),
-  verbose = TRUE
-)
+
+test_8_diff <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "binomial",
+    estimand = "difference",
+    impute_formulas = impute_formulas,
+    impute_model = "binomial",
+    imputation_args = 
+      list(
+        family = binomial,
+        link = "logit"
+      ),
+    verbose = TRUE
+  )
+
+test_8_diff$ate
+
+
+test_8_ratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "binomial",
+    estimand = "ratio",
+    impute_formulas = impute_formulas,
+    impute_model = "binomial",
+    imputation_args = 
+      list(
+        family = binomial,
+        link = "logit"
+      ),
+    verbose = TRUE
+  )
+
+test_8_ratio$ate
+
+
+test_8_oddsratio <-
+  rctmle(
+    data = sim_data,
+    propensity_score_formula = propensity_score_formula,
+    inverse_weight_formulas = inverse_weight_formulas,
+    outcome_formulas = outcome_formulas,
+    outcome_type = "binomial",
+    estimand = "oddsratio",
+    impute_formulas = impute_formulas,
+    impute_model = "binomial",
+    imputation_args = 
+      list(
+        family = binomial,
+        link = "logit"
+      ),
+    verbose = TRUE
+  )
+
+test_8_oddsratio$ate
