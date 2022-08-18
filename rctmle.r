@@ -1481,8 +1481,8 @@ tmle_compute <-
           parse(
             text = 
               paste0(
-                "mgcv::gam(formula = outcome_formulas[[i]], data = data, ",
-                "subset = ..u_", i, ", weights = ..ipw_", i, ")"
+                "mgcv::gam(formula = outcome_formulas[[", i, "]], ",
+                "data = data, subset = ..u_", i, ", weights = ..ipw_", i, ")"
               )
           )
         )
