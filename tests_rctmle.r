@@ -120,7 +120,7 @@ test_1_diff <-
     outcome_type = "gaussian",
     estimand = "difference",
     impute_formulas = impute_formulas,
-    impute_model = "pmm",
+    impute_model = "gaussian",
     imputation_args = 
       list(
         family = gaussian(link = "identity")
@@ -140,7 +140,7 @@ test_1_ratio <-
     outcome_type = "gaussian",
     estimand = "ratio",
     impute_formulas = impute_formulas,
-    impute_model = "pmm",
+    impute_model = "gaussian",
     imputation_args = 
       list(
         family = gaussian(link = "identity")

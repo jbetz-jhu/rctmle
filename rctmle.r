@@ -956,6 +956,7 @@ compute_inverse_weights <-
         }
         
         uncensored <- which(!prev_censored)
+        
 
         if(carry_weights_forward) {
           ip_weights[uncensored, (i + 1)] <-
@@ -1346,7 +1347,7 @@ tmle_compute <-
     absorbing_outcome = NULL,
     impute = FALSE,
     impute_formulas = NULL,
-    impute_model,
+    impute_model = NULL,
     imputation_args = NULL,
     verbose = FALSE,
     max_abs_weight = 20
@@ -1437,12 +1438,34 @@ tmle_compute <-
     # Compute sequence of regression fits:
     regression_sequence <- list()
     
-    # Create new columns for fits and IPW:
-    data[, "..ipw"] <- NA
+    # Create indicators for those not previously censored or absorbed
+    uncensored <-
+      !is.na(data[, head(y_columns, -1)])
     
-    fit_y_columns <- paste0("..", c(y_columns))
+    absorbed <-
+      t(
+        apply(
+          X = data[, head(y_columns, -1)],
+          MARGIN = 1,
+          FUN = function(x, state = absorbing_state)
+            cummax(x %in% state)
+        )
+      )
+
+    
+    # Add IPW, uncensored indicators, outcome model fits 
+    fit_y_columns <- paste0("..", y_columns)
     data[, fit_y_columns] <- NA
-    data[, fit_y_columns[n_outcomes]] <- data[, y_columns[n_outcomes]]
+    data[, tail(x = fit_y_columns, 1)] <- data[, tail(x = y_columns, 1)]
+    
+    data <-
+      cbind(
+        data, 
+        setNames(object = data.frame(ipw),
+                 nm = paste0("..ipw_", 1:ncol(ipw))),
+        setNames(object = data.frame(cbind(TRUE, uncensored & !absorbed)),
+                 nm = paste0("..u_", 1:ncol(ipw)))
+    )
     
     if(outcome_type %in% "gaussian"){
       glm_family <- gaussian
@@ -1451,28 +1474,17 @@ tmle_compute <-
     }
     
     for(i in n_outcomes:1){
-      uncensored <- 
-        if(i > 1){
-          if(is.null(absorbing_state)){
-            which(!is.na(data[, y_columns[(i-1)]]))
-          } else {
-            which(
-              !(is.na(data[, y_columns[(i-1)]]) |
-                  data[, y_columns[(i-1)]] %in% absorbing_state)
-            )
-          }
-        } else{
-          1:nrow(data)
-        }
+      uncensored <- which(data[, paste0("..u_", i)])
       
-      data$..ipw <- ipw[, i]
-      
-      outcome_regression <- 
-        glm(
-          formula = outcome_formulas[[i]],
-          data = data[uncensored, ],
-          family = glm_family,
-          weights = data[uncensored,]$..ipw
+      outcome_regression <-
+        eval(
+          parse(
+            text = 
+              paste0(
+                "glm(formula = outcome_formulas[[i]], data = data, ",
+                "subset = ..u_", i, ", weights = ..ipw_", i, ")"
+              )
+          )
         )
       
       if(verbose) regression_sequence[[i]] <- outcome_regression
@@ -1481,14 +1493,15 @@ tmle_compute <-
         data[uncensored, fit_y_columns[(i - 1)]] <-
           predict(
             object = outcome_regression,
-            newdata = data[uncensored, ],
+            newdata = 
+              subset(data, eval(parse(text = paste0("..u_", i)))),
             type = "response"
           )
         
         if(!is.null(absorbing_state)){
-          absorbed <- which(data[, y_columns[(i-1)]] %in% absorbing_state)
-          if(length(absorbed) > 0){
-            data[absorbed, fit_y_columns[(i - 1)]] <- absorbing_outcome
+          absorbed_i <- which(data[, y_columns[(i-1)]] %in% absorbing_state)
+          if(length(absorbed_i) > 0){
+            data[absorbed_i, fit_y_columns[(i - 1)]] <- absorbing_outcome
           }
         }
       }
@@ -1731,6 +1744,7 @@ rctmle <-
         # impute_model, imputation_args, ...
         arg_list
       )
+    
     
     if(ci){
       
