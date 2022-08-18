@@ -84,13 +84,13 @@ sim_data[, paste0("y_bin_obs_", 1:visits)] <-
 ### Set up Propensity & IPW Formulas ###########################################
 
 propensity_score_formula <-
-  tx ~ x_1 + x_2 + x_3 + x_4
+  tx ~ s(x_1) + x_2 + x_3 + x_4
 
 inverse_weight_formulas <-
   list(
-    ~ x_1 + x_2 + x_3 + x_4 + tx,
-    ~ x_1 + x_2 + x_3 + x_4 + tx + y_obs_1,
-    ~ x_1 + x_2 + x_3 + x_4 + tx + y_obs_1 + y_obs_2
+    ~ s(x_1) + x_2 + x_3 + x_4 + tx,
+    ~ s(x_1) + x_2 + x_3 + x_4 + tx + y_obs_1,
+    ~ s(x_1) + x_2 + x_3 + x_4 + tx + y_obs_1 + y_obs_2
   )
 
 

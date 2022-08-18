@@ -978,7 +978,7 @@ compute_inverse_weights <-
           }
           
           ipw_model <-
-            glm(
+            mgcv::gam(
               formula = inverse_weight_formulas[[i]],
               data = data[uncensored_unabsorbed, ],
               family = binomial
@@ -1390,7 +1390,7 @@ tmle_compute <-
     
     # Fit propensity score model & compute propensity score
     propensity_model <-
-      glm(
+      mgcv::gam(
         formula = propensity_score_formula,
         data = data,
         family = binomial
@@ -1481,7 +1481,7 @@ tmle_compute <-
           parse(
             text = 
               paste0(
-                "glm(formula = outcome_formulas[[i]], data = data, ",
+                "mgcv::gam(formula = outcome_formulas[[i]], data = data, ",
                 "subset = ..u_", i, ", weights = ..ipw_", i, ")"
               )
           )
