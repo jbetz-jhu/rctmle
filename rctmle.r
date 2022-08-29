@@ -1126,10 +1126,7 @@ tmle_precheck <-
     imputation_x = NULL,
     impute_formulas = NULL,
     impute_model = NULL,
-    outcome_type =
-      c("gaussian",
-        "logistic",
-        "binomial")[1],
+    outcome_type,
     outcome_range = NULL,
     absorbing_state = NULL
   ) {
@@ -1482,6 +1479,7 @@ tmle_compute <-
             text = 
               paste0(
                 "mgcv::gam(formula = outcome_formulas[[", i, "]], ",
+                "family = glm_family, ",
                 "data = data, subset = ..u_", i, ", weights = ..ipw_", i, ")"
               )
           )
