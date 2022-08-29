@@ -445,10 +445,10 @@ impute_outcomes_to_monotone <-
         args = arg_list[formalArgs(impute_gam)] 
       )
     } else if(arg_list$model == "multinomial") {
-      if(is.null(absorbing_state)){
+      if(is.null(arg_list$absorbing_state)){
         do.call(
           what = impute_multinomial,
-          args = arg_list
+          args = arg_list[formalArgs(impute_multinomial)]
         )
       } else {
         do.call(
