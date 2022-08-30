@@ -659,7 +659,7 @@ impute_multinomial <-
       
       # Fit Imputation Model among observed cases
       impute_model <-
-        multinom(
+        nnet::multinom(
           formula = impute_formulas[[i]],
           data = data,
           trace = FALSE
@@ -771,7 +771,7 @@ impute_multinomial_absorbing <-
       if(sum(impute_full) > 0){
         
         impute_model <-
-          multinom(
+          nnet::multinom(
             formula = impute_formulas[[i]],
             data = data,
             trace = FALSE
