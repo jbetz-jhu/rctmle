@@ -676,7 +676,7 @@ impute_multinomial <-
               newdata = data[which(impute_columns[, i]), ],
               type = "probs"
             ),
-          MAR = 1,
+          MARGIN = 1,
           FUN = function(x, outcome_levels) 
             outcome_levels[
               which(rmultinom(n = 1, size = 1, prob = x) == 1)
@@ -788,7 +788,7 @@ impute_multinomial_absorbing <-
               newdata = data[which(impute_full), ],
               type = "probs"
             ),
-            MAR = 1,
+            MARGIN = 1,
             FUN = function(x, outcome_levels) 
               outcome_levels[
                 which(rmultinom(n = 1, size = 1, prob = x) == 1)
@@ -858,7 +858,7 @@ impute_multinomial_absorbing <-
         imputations <-
           apply(
             X = imputations,
-            MAR = 1,
+            MARGIN = 1,
             FUN = function(x, outcome_levels) 
               outcome_levels[
                 which(rmultinom(n = 1, size = 1, prob = x) == 1)
