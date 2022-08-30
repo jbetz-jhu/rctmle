@@ -825,7 +825,7 @@ impute_multinomial_absorbing <-
         }
         
         impute_model <-
-          multinom(
+          nnet::multinom(
             formula = impute_formulas[[i]],
             data = non_absorbed,
             trace = FALSE
