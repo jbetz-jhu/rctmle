@@ -1124,6 +1124,7 @@ tmle_precheck <-
     x_columns,
     y_columns,
     tx_column,
+    impute_monotone = NULL,
     imputation_x = NULL,
     impute_formulas = NULL,
     impute_model = NULL,
@@ -1132,6 +1133,7 @@ tmle_precheck <-
     absorbing_state = NULL
   ) {
     
+    # Check for missing covariates
     imputation_x <-
       setdiff(
         x = imputation_x,
@@ -1141,7 +1143,7 @@ tmle_precheck <-
     n_missing_covariates <-
       colSums(is.na(data[, c(x_columns, tx_column, imputation_x)]))
     
-    # Check for missing covariates
+    
     if(sum(n_missing_covariates) > 0) {
       n_missing_covariates <-
         n_missing_covariates[n_missing_covariates > 0]
@@ -1160,8 +1162,7 @@ tmle_precheck <-
       stop(paste0("Treatment column `", tx_column, "` must be binary."))
     }
     
-    
-    # Check for logistic data outside [0, 1]
+    # Check outcome specification vs. data
     if(outcome_type == "logistic"){
       if(is.null(outcome_range)){
         stop("Outcome range not specified for logistic outcome model:")
@@ -1170,17 +1171,12 @@ tmle_precheck <-
       out_of_range <-
         colSums(x = data[, y_columns] > outcome_range[2], na.rm = TRUE) +
         colSums(x = data[, y_columns] < outcome_range[1], na.rm = TRUE)
-        
+      
       if(sum(out_of_range) > 0) {
         stop("Outcomes out of range [0, 1]: ",
              paste(names(which(out_of_range > 0)), collapse = ", "))
       }
-    }
-    
-    
-    # Check for binary data not in {0, 1}
-    if(outcome_type == "binomial"){
-      
+    } else if (outcome_type == "binomial") {
       out_of_range <-
         apply(
           X = data[, y_columns],
@@ -1192,20 +1188,17 @@ tmle_precheck <-
         stop("Outcomes out of range {0, 1}: ",
              paste(names(which(out_of_range > 0)), collapse = ", "))
       }
-    }
-    
-    if(outcome_type == "multinomial-binomial"){
+    } else if(outcome_type == "multinomial-binomial"){
       if(
         !all(
           sapply(
             X = data[ , head(y_columns, -1)],
             FUN = class
-            ) == "factor"
-          )
+          ) == "factor"
+        )
       ){
         stop("Intermediate multinomial outcomes must be type 'factor'")
       }
-      
       
       out_of_range <-
         !(data[, tail(y_columns, 1)] %in% c(0, 1, NA))
@@ -1222,57 +1215,90 @@ tmle_precheck <-
       }
     }
     
-    # Check for non-monotone missingness
-    impute_columns <-
+    non_monotone_outcomes <-
       non_monotone(
         data = data,
         y_columns = y_columns
       )
     
-    n_non_monotone <- colSums(impute_columns)
-    
-    if(sum(n_non_monotone) > 0){
+    # Check imputation parameters
+    if(sum(non_monotone_outcomes) > 0){
       
-      if(is.null(impute_formulas)){
-        stop("Missingness is not monotone and no imputation formula is supplied.")
+      # Non-monotone missingness - No handling of missingness specified
+      if(is.null(impute_monotone)){
+        stop("Missingness is not monotone: ",
+             "`impute_monotone` must be FALSE or TRUE.")
+      } else if(!(impute_monotone %in% c(FALSE, TRUE))){
+        stop("Missingness is not monotone: ",
+             "`impute_monotone` must be FALSE or TRUE.")
       }
       
-      if(!impute_model %in%
-         c("gaussian", "binomial", "beta", "pmm", "multinomial")) {
-        stop("Invalid specification for `impute_model`: ",
-             impute_model)
+      if(impute_monotone){
+        # Find which variables must be imputed: Ensure temporal order
+        non_monotone_vars <- names(which(n_non_monotone > 0))
+        
+        imputation_rhs <- 
+          sapply(
+            X = impute_formulas,
+            FUN =
+              function(x) all.vars(update(x, . ~ 0))
+          )
+        
+        imputation_rhs_missing <- 
+          setdiff(x = non_monotone_vars, y = imputation_rhs)
+        
+        if(length(imputation_rhs_missing) > 0) {
+          stop("No model specified for outcomes with non-monotone missingness: ",
+               paste(imputation_rhs_missing, collapse = ", "))
+        }
+        
+        if(is.null(impute_formulas)){
+          stop("Missingness is not monotone and no imputation formula is supplied.")
+        }
+        
+        if(!impute_model %in%
+           c("gaussian", "binomial", "beta", "pmm", "multinomial")) {
+          stop("Invalid specification for `impute_model`:",
+               impute_model)
+        }
+        
+        # Find which variables must be imputed: Ensure temporal order
+        non_monotone_vars <- 
+          names(which(colSums(non_monotone_outcomes) > 0))
+        
+        imputation_rhs <- 
+          sapply(
+            X = impute_formulas,
+            FUN =
+              function(x) all.vars(update(x, . ~ 0))
+          )
+        
+        imputation_rhs_missing <- 
+          setdiff(x = non_monotone_vars, y = imputation_rhs)
+        
+        if(length(imputation_rhs_missing) > 0) {
+          stop("No model specified for outcomes with non-monotone missingness: ",
+               paste(imputation_rhs_missing, collapse = ", "))
+        }
+        
+        # Subset formulas to variables with non-monotone missingness
+        # Order in temporal sequence if needed
+        impute_formulas <-
+          impute_formulas[
+            match(x = intersect(x = imputation_rhs, y = non_monotone_vars),
+                  table = y_columns)
+          ]
+        
+        
+      } else {
+        impute_columns = NULL
+        impute_formulas = NULL
       }
-      
-      # Find which variables must be imputed: Ensure temporal order
-      non_monotone_vars <- names(which(n_non_monotone > 0))
-      
-      imputation_rhs <- 
-        sapply(
-          X = impute_formulas,
-          FUN =
-            function(x) all.vars(update(x, . ~ 0))
-        )
-      
-      imputation_rhs_missing <- 
-        setdiff(x = non_monotone_vars, y = imputation_rhs)
-      
-      if(length(imputation_rhs_missing) > 0) {
-        stop("No model specified for outcomes with non-monotone missingness: ",
-             paste(imputation_rhs_missing, collapse = ", "))
-      }
-      
-      # Subset formulas to variables with non-monotone missingness
-      # Order in temporal sequence if needed
-      impute_formulas <-
-        impute_formulas[
-          match(x = intersect(x = imputation_rhs, y = non_monotone_vars),
-                table = y_columns)
-        ]
     }
     
     return(
       list(
-        impute_columns = impute_columns,
+        impute_columns = non_monotone_outcomes,
         impute_formulas = impute_formulas
       )
     )
@@ -1343,7 +1369,7 @@ tmle_compute <-
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
-    impute = FALSE,
+    impute_monotone = FALSE,
     impute_formulas = NULL,
     impute_model = NULL,
     imputation_args = NULL,
@@ -1355,10 +1381,10 @@ tmle_compute <-
     
     n_outcomes <- length(y_columns)
   
-    if(impute){
-      impute_columns <-
-        non_monotone(data = data, y_columns = y_columns)
-      
+    impute_columns <-
+      non_monotone(data = data, y_columns = y_columns)
+    
+    if(impute_monotone){
       imputed_outcomes <-
         do.call(
           what = impute_outcomes_to_monotone,
@@ -1383,6 +1409,16 @@ tmle_compute <-
         data <- imputed_outcomes
       }
     } else {
+      
+      for(i in 1:ncol(impute_columns)){
+        
+        censor_outcome <- names(impute_columns)[i]
+        
+        data[which(impute_columns[, i]),
+             y_columns[which(y_columns == censor_outcome):length(y_columns)]
+        ] <- NA
+      }
+      
       imputed_outcomes <- NULL
     }
     
@@ -1620,6 +1656,7 @@ rctmle <-
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
+    impute_monotone = NULL,
     impute_formulas = NULL,
     impute_model = NULL,
     imputation_args = NULL,
@@ -1631,8 +1668,8 @@ rctmle <-
     ...
   ) {
     
-    outcome_type <- tolower(outcome_type)
-    impute_model <- tolower(impute_model)
+    if(!is.null(outcome_type)) outcome_type <- tolower(outcome_type)
+    if(!is.null(impute_model)) impute_model <- tolower(impute_model)
     
     arg_list <- as.list(substitute(list(...)))[-1L]
     
@@ -1680,13 +1717,11 @@ rctmle <-
         imputation_x = tmle_args$imputation_x,
         impute_formulas = impute_formulas,
         impute_model = impute_model,
+        impute_monotone = impute_monotone,
         outcome_type = outcome_type,
         outcome_range = outcome_range,
         absorbing_state = absorbing_state
       )
-    
-    impute <-
-      sum(colSums(non_monotone(data = data, y_columns = tmle_args$y_columns)))
     
     if(outcome_type == "logistic"){
       data[, tmle_args$y_columns] <-
@@ -1708,6 +1743,7 @@ rctmle <-
         outcome_formulas = outcome_formulas
       )
     
+    
     # Re-set environments for formulas updated within functions
     for (i in 1:length(tmle_formulas$inverse_weight_formulas))
       environment(tmle_formulas$inverse_weight_formulas[[i]]) <-
@@ -1717,9 +1753,13 @@ rctmle <-
       environment(tmle_formulas$outcome_formulas[[i]]) <-
       environment(outcome_formulas[[i]])
     
-    for (i in 1:length(precheck_results$impute_formulas))
-      environment(precheck_results$impute_formulas[[i]]) <-
-      environment(impute_formulas[[i]])
+    if(!is.null(impute_monotone)){
+      if(impute_monotone){    
+        for (i in 1:length(precheck_results$impute_formulas))
+          environment(precheck_results$impute_formulas[[i]]) <-
+            environment(impute_formulas[[i]])
+      }
+    }
     
     arg_list <-
       c(
@@ -1736,7 +1776,7 @@ rctmle <-
           outcome_range = outcome_range,
           absorbing_state = absorbing_state,
           absorbing_outcome = absorbing_outcome,
-          impute = impute,
+          impute_monotone = impute_monotone,
           impute_formulas = impute_formulas,
           imputation_args = imputation_args,
           impute_model = impute_model,
