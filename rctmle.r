@@ -892,10 +892,14 @@ compute_inverse_weights <-
   function(
     data,
     inverse_weight_formulas,
+    inverse_weight_stratified = FALSE,
+    inverse_weight_prediction_tx = "counterfactual",
     y_columns,
+    tx_column,
     verbose = FALSE,
     absorbing_state = NULL
   ) {
+    
     n_outcomes <- length(y_columns)
     
     ipw_models <- list()
@@ -906,7 +910,7 @@ compute_inverse_weights <-
     # No missing outcomes
     if (all(missing_outcomes == 0)) {
       # No missing data
-      ip_weights <-
+      ip_weights_tx_1 <- ip_weights_tx_0 <-
         matrix(
           data = 1,
           nrow = nrow(data),
@@ -915,22 +919,14 @@ compute_inverse_weights <-
       
     } else {
       
-      # Count non-monotone missingness
-      n_non_monotone <-
-        sum(colSums(non_monotone(data = data, y_columns = y_columns)))
-      
-      if(n_non_monotone > 0){
-        stop("Missing pattern must be monotone")
-      }
-      
-      ip_weights <-
+      ip_weights_tx_1 <- ip_weights_tx_0 <-
         matrix(
           data = NA,
           nrow = nrow(data),
           ncol = (n_outcomes + 1)
         )
       
-      ip_weights[, 1] <- 1
+      ip_weights_tx_1[, 1] <- ip_weights_tx_0[, 1] <- 1
       
       for(i in 1:n_outcomes){
         
@@ -959,10 +955,12 @@ compute_inverse_weights <-
         
 
         if(carry_weights_forward) {
-          ip_weights[uncensored, (i + 1)] <-
-            ip_weights[uncensored, i]
+          ip_weights_tx_1[uncensored, (i + 1)] <-
+            ip_weights_tx_1[uncensored, i]
+          
+          ip_weights_tx_0[uncensored, (i + 1)] <-
+            ip_weights_tx_0[uncensored, i]
         } else {
-          # Newly censored observations
           
           if(is.null(absorbing_state)){
             uncensored_unabsorbed <- uncensored
@@ -977,25 +975,143 @@ compute_inverse_weights <-
             }
           }
           
-          ipw_model <-
-            # mgcv::gam(
-            stats::glm(
-              formula = inverse_weight_formulas[[i]],
-              data = data[uncensored_unabsorbed, ],
-              family = binomial
-            )
-          
-          if(verbose) ipw_models[[i]] <- ipw_model
-          
-          pr_cens_i <-
-            predict(
-              object = ipw_model,
-              newdata = data[uncensored_unabsorbed,],
-              type = "response"
-            )
-          
-          ip_weights[uncensored_unabsorbed, (i + 1)] <-
-            ip_weights[uncensored_unabsorbed, i]*(1/pr_cens_i)
+          if(inverse_weight_stratified){
+            
+            uncensored_unabsorbed_tx_1 <-
+              intersect(uncensored_unabsorbed, which(data[, tx_column] == 1))
+            
+            uncensored_unabsorbed_tx_0 <-
+              intersect(uncensored_unabsorbed, which(data[, tx_column] == 0))
+            
+            ipw_model_tx_1 <-
+              stats::glm(
+                formula = inverse_weight_formulas[[i]],
+                data = data[uncensored_unabsorbed_tx_1, ],
+                family = binomial
+              )
+            
+            ipw_model_tx_0 <-
+              stats::glm(
+                formula = inverse_weight_formulas[[i]],
+                data = data[uncensored_unabsorbed_tx_0, ],
+                family = binomial
+              )
+            
+            if(inverse_weight_prediction_tx == "counterfactual") {
+              pr_obs_fit_tx_1 <-
+                predict(
+                  object = ipw_model_tx_1,
+                  newdata = 
+                    within(
+                      data = data[uncensored_unabsorbed,],
+                      expr = {
+                        eval(parse(text = paste0(tx_column, " = 1")))
+                      }
+                    ),
+                  type = "response"
+                )
+              
+              pr_obs_fit_tx_0 <-
+                predict(
+                  object = ipw_model_tx_0,
+                  newdata = 
+                    within(
+                      data = data[uncensored_unabsorbed,],
+                      expr = {
+                        eval(parse(text = paste0(tx_column, " = 0")))
+                      }
+                    ),
+                  type = "response"
+                )
+              
+              ip_weights_tx_1[uncensored_unabsorbed, (i + 1)] <-
+                ip_weights_tx_1[uncensored_unabsorbed, i]*
+                (1/pr_obs_fit_tx_1)
+              
+              ip_weights_tx_0[uncensored_unabsorbed, (i + 1)] <-
+                ip_weights_tx_0[uncensored_unabsorbed, i]*
+                (1/pr_obs_fit_tx_0)
+            
+            } else if(inverse_weight_prediction_tx == "observed") {
+              ip_weights_tx_1[uncensored_unabsorbed_tx_1, (i + 1)] <-
+                ip_weights_tx_1[uncensored_unabsorbed_tx_1, i]*
+                (1/ipw_model_tx_1$fitted.values)
+              
+              ip_weights_tx_1[uncensored_unabsorbed_tx_0, (i + 1)] <-
+                ip_weights_tx_1[uncensored_unabsorbed_tx_0, i]*
+                (1/ipw_model_tx_0$fitted.values)
+              
+              ip_weights_tx_0[, (i + 1)] <-
+                ip_weights_tx_1[, (i + 1)]
+            }
+
+            if(verbose) {
+              ipw_models[[i]] <- 
+                list(
+                  ipw_model_tx_1 = ipw_model_tx_1,
+                  ipw_model_tx_0 = ipw_model_tx_0
+                )
+            }
+            
+          } else {
+            ipw_model <-
+              # mgcv::gam(
+              stats::glm(
+                formula = inverse_weight_formulas[[i]],
+                data = data[uncensored_unabsorbed, ],
+                family = binomial
+              )
+            
+            if(verbose) ipw_models[[i]] <- ipw_model
+            
+            if(inverse_weight_prediction_tx == "counterfactual") {
+              pr_obs_fit_tx_1 <-
+                predict(
+                  object = ipw_model,
+                  newdata = 
+                    within(
+                      data = data[uncensored_unabsorbed,],
+                      expr = {
+                        eval(parse(text = paste0(tx_column, " = 1")))
+                      }
+                    ),
+                  type = "response"
+                )
+              
+              pr_obs_fit_tx_0 <-
+                predict(
+                  object = ipw_model,
+                  newdata = 
+                    within(
+                      data = data[uncensored_unabsorbed,],
+                      expr = {
+                        eval(parse(text = paste0(tx_column, " = 0")))
+                      }
+                    ),
+                  type = "response"
+                )
+              
+              ip_weights_tx_1[uncensored_unabsorbed, (i + 1)] <-
+                ip_weights_tx_1[uncensored_unabsorbed, i]*(1/pr_obs_fit_tx_1) 
+              
+              ip_weights_tx_0[uncensored_unabsorbed, (i + 1)] <-
+                ip_weights_tx_0[uncensored_unabsorbed, i]*(1/pr_obs_fit_tx_0) 
+              
+            } else if(inverse_weight_prediction_tx == "observed") {
+              pr_obs_fit <-
+                predict(
+                  object = ipw_model,
+                  newdata = data[uncensored_unabsorbed,],
+                  type = "response"
+                )
+              
+              ip_weights_tx_1[uncensored_unabsorbed, (i + 1)] <-
+                ip_weights_tx_1[uncensored_unabsorbed, i]*(1/pr_obs_fit) 
+              
+              ip_weights_tx_0[uncensored_unabsorbed, (i + 1)] <-
+                ip_weights_tx_0[uncensored_unabsorbed, i]*(1/pr_obs_fit) 
+            }
+          }
         }
       }
     }
@@ -1004,14 +1120,18 @@ compute_inverse_weights <-
       return(
         list(
           # Drop leading column
-          ipw = ip_weights[, -1],
+          ip_weights_tx_1 = ip_weights_tx_1[, -1],
+          ip_weights_tx_0 = ip_weights_tx_0[, -1],
           ipw_models = ipw_models
         )
       )
     } else{
       return(
         # Drop leading column
-        ip_weights[, -1]
+        list(
+          ip_weights_tx_1 = ip_weights_tx_1[, -1],
+          ip_weights_tx_0 = ip_weights_tx_0[, -1]
+        )
       )
     }
   }
@@ -1128,7 +1248,9 @@ tmle_precheck <-
     imputation_x = NULL,
     impute_formulas = NULL,
     impute_model = NULL,
+    inverse_weight_prediction_tx,
     outcome_type,
+    outcome_prediction_tx,
     outcome_range = NULL,
     absorbing_state = NULL
   ) {
@@ -1155,6 +1277,16 @@ tmle_precheck <-
           collapse = ", "
         )
       )
+    }
+    
+    if(!(inverse_weight_prediction_tx %in% c("counterfactual", "observed"))){
+      stop("Only supported values of `inverse_weight_prediction_tx` are: ",
+           "\"counterfactual\" and \"observed\".")
+    }
+    
+    if(!(outcome_prediction_tx %in% c("counterfactual", "observed"))){
+      stop("Only supported values of `outcome_prediction_tx` are: ",
+           "\"counterfactual\" and \"observed\".")
     }
     
     # Check for treatment indicator that is not in {0, 1}
@@ -1320,6 +1452,7 @@ tmle_get_formulas <-
     inverse_weight_formulas,
     outcome_formulas
   ){
+    outcome_formulas_tx_1 <- outcome_formulas_tx_0 <- list()
     
     for(i in 1:length(inverse_weight_formulas)){
       # Cut off LHS (if supplied) - use y_columns to find response
@@ -1331,21 +1464,30 @@ tmle_get_formulas <-
             paste("!is.na(", y_columns[i], ")", collapse = "", sep = "")
         )
     }
-    
+
     for(i in 1:length(outcome_formulas)){
-      outcome_formulas[[i]] <-
+      outcome_formulas_tx_1[[i]] <-
         reformulate(
           termlabels =
             Reduce(paste, deparse(tail(outcome_formulas[[i]], 1)[[1]])),
           response =
-            paste0("..", y_columns[i])
+            paste0("..", y_columns[i], "_tx_1")
+        )
+      
+      outcome_formulas_tx_0[[i]] <-
+        reformulate(
+          termlabels =
+            Reduce(paste, deparse(tail(outcome_formulas[[i]], 1)[[1]])),
+          response =
+            paste0("..", y_columns[i], "_tx_0")
         )
     }
     
     return(
       list(
         inverse_weight_formulas = inverse_weight_formulas,
-        outcome_formulas = outcome_formulas
+        outcome_formulas_tx_1 = outcome_formulas_tx_1,
+        outcome_formulas_tx_0 = outcome_formulas_tx_0
       )
     )
   }
@@ -1363,9 +1505,13 @@ tmle_compute <-
     y_columns, tx_column,
     propensity_score_formula,
     inverse_weight_formulas,
-    outcome_formulas,
+    inverse_weight_stratified = FALSE,
+    inverse_weight_prediction_tx = "counterfactual",
+    outcome_formulas_tx_1,
+    outcome_formulas_tx_0,
     outcome_type,
     estimand,
+    outcome_prediction_tx = "counterfactual",
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
@@ -1431,9 +1577,8 @@ tmle_compute <-
         family = binomial
       )
     
-    propensity_score <-
-      (data[, tx_column] == 1)*propensity_model$fitted.values +
-      (1 - (data[, tx_column] == 1))*(1 - propensity_model$fitted.values)
+    pr_tx_1 <- propensity_model$fitted.values
+    pr_tx_0 <- (1 - pr_tx_1)
     
     # Compute inverse probability of censoring weights
     inverse_weights <-
@@ -1441,37 +1586,55 @@ tmle_compute <-
         data = data,
         inverse_weight_formulas = inverse_weight_formulas,
         y_columns = y_columns,
+        tx_column = tx_column,
+        inverse_weight_stratified = inverse_weight_stratified,
+        inverse_weight_prediction_tx = inverse_weight_prediction_tx,
         absorbing_state = absorbing_state,
         verbose = verbose
       )
     
-    if(verbose){
-      assign(x = "ipw", value = inverse_weights$ipw)
-    } else {
-      assign(x = "ipw", value = inverse_weights)
-    }
+    ipw_tx_1 <- inverse_weights$ip_weights_tx_1
+    ipw_tx_0 <- inverse_weights$ip_weights_tx_0
     
-    ipw <-
-      ipw*kronecker(
+    ipw_tx_1 <-
+      ipw_tx_1*kronecker(
         X = matrix(data = 1, ncol = n_outcomes),
-        Y = 1/propensity_score
+        Y = 1/pr_tx_1
+      )
+    
+    ipw_tx_0 <-
+      ipw_tx_0*kronecker(
+        X = matrix(data = 1, ncol = n_outcomes),
+        Y = 1/pr_tx_0
       )
     
     # Truncate Weights
-    ipw <-
+    ipw_tx_1 <-
       apply(
-        X = ipw,
+        X = ipw_tx_1,
         MARGIN = 2,
         FUN = function(x) pmin(x, max_abs_weight)
       )
     
-    if(any(colSums(!is.na(ipw)) == 0)){
+    ipw_tx_0 <-
+      apply(
+        X = ipw_tx_0,
+        MARGIN = 2,
+        FUN = function(x) pmin(x, max_abs_weight)
+      )
+    
+    if(any(colSums(!is.na(ipw_tx_1)) == 0)){
       stop("Error in IP weights columns: ",
-           paste0(which(colSums(!is.na(ipw)) == 0), collapse = ", "))
+           paste0(which(colSums(!is.na(ipw_tx_1)) == 0), collapse = ", "))
+    }
+    
+    if(any(colSums(!is.na(ipw_tx_0)) == 0)){
+      stop("Error in IP weights columns: ",
+           paste0(which(colSums(!is.na(ipw_tx_0)) == 0), collapse = ", "))
     }
     
     # Compute sequence of regression fits:
-    regression_sequence <- list()
+    regression_sequence_tx_1 <- regression_sequence_tx_0 <- list()
     
     # Create indicators for those not previously censored or absorbed
     uncensored <-
@@ -1489,17 +1652,22 @@ tmle_compute <-
 
     
     # Add IPW, uncensored indicators, outcome model fits 
-    fit_y_columns <- paste0("..", y_columns)
-    data[, fit_y_columns] <- NA
-    data[, tail(x = fit_y_columns, 1)] <- data[, tail(x = y_columns, 1)]
+    fit_y_columns_tx_1 <- paste0("..", y_columns, "_tx_1")
+    fit_y_columns_tx_0 <- paste0("..", y_columns, "_tx_0")
+    data[, c(fit_y_columns_tx_1, fit_y_columns_tx_0)] <- NA
+    data[, c(tail(x = fit_y_columns_tx_1, 1),
+             tail(x = fit_y_columns_tx_0, 1))] <-
+      data[, tail(x = y_columns, 1)]
     
     data <-
       cbind(
         data, 
-        setNames(object = data.frame(ipw),
-                 nm = paste0("..ipw_", 1:ncol(ipw))),
+        setNames(object = data.frame(ipw_tx_1),
+                 nm = paste0("..ipw_tx_1_", 1:ncol(ipw_tx_1))),
+        setNames(object = data.frame(ipw_tx_0),
+                 nm = paste0("..ipw_tx_0_", 1:ncol(ipw_tx_0))),
         setNames(object = data.frame(cbind(TRUE, uncensored & !absorbed)),
-                 nm = paste0("..u_", 1:ncol(ipw)))
+                 nm = paste0("..u_", 1:ncol(ipw_tx_1)))
     )
     
     if(outcome_type %in% "gaussian"){
@@ -1511,34 +1679,73 @@ tmle_compute <-
     for(i in n_outcomes:1){
       uncensored <- which(data[, paste0("..u_", i)])
       
-      outcome_regression <-
+      outcome_regression_tx_1 <-
         eval(
           parse(
             text = 
               paste0(
-                # "mgcv::gam(formula = outcome_formulas[[", i, "]], ",
-                "stats::glm(formula = outcome_formulas[[", i, "]], ",
+                "stats::glm(formula = ", 
+                Reduce(paste, deparse(outcome_formulas_tx_1[[ i ]])), ", ",
                 "family = glm_family, ",
-                "data = data, subset = ..u_", i, ", weights = ..ipw_", i, ")"
+                "data = data, subset = ..u_", i, ", ",
+                "weights = ..ipw_tx_1_", i, ")"
               )
           )
         )
       
-      if(verbose) regression_sequence[[i]] <- outcome_regression
+      outcome_regression_tx_0 <-
+        eval(
+          parse(
+            text = 
+              paste0(
+                "stats::glm(formula = ", 
+                Reduce(paste, deparse(outcome_formulas_tx_0[[ i ]])), ", ",
+                "family = glm_family, ",
+                "data = data, subset = ..u_", i, ", ",
+                "weights = ..ipw_tx_0_", i, ")"
+              )
+          )
+        )
+      
+      if(verbose) regression_sequence_tx_1[[i]] <- outcome_regression_tx_1
+      if(verbose) regression_sequence_tx_0[[i]] <- outcome_regression_tx_0
       
       if(i > 1) {
-        data[uncensored, fit_y_columns[(i - 1)]] <-
+        data[uncensored, fit_y_columns_tx_1[(i - 1)]] <-
           predict(
-            object = outcome_regression,
+            object = outcome_regression_tx_1,
             newdata = 
-              subset(data, eval(parse(text = paste0("..u_", i)))),
+              within(
+                data = subset(data, eval(parse(text = paste0("..u_", i)))),
+                expr = {
+                  if(outcome_prediction_tx == "counterfactual") {
+                    eval(parse(text = paste0(tx_column, " = 1")))
+                  }
+                }
+              ),
+            type = "response"
+          )
+        
+        data[uncensored, fit_y_columns_tx_0[(i - 1)]] <-
+          predict(
+            object = outcome_regression_tx_0,
+            newdata = 
+              within(
+                data = subset(data, eval(parse(text = paste0("..u_", i)))),
+                expr = {
+                  if(outcome_prediction_tx == "counterfactual") {
+                    eval(parse(text = paste0(tx_column, " = 0")))
+                  }
+                }
+              ),
             type = "response"
           )
         
         if(!is.null(absorbing_state)){
           absorbed_i <- which(data[, y_columns[(i-1)]] %in% absorbing_state)
           if(length(absorbed_i) > 0){
-            data[absorbed_i, fit_y_columns[(i - 1)]] <- absorbing_outcome
+            data[absorbed_i, fit_y_columns_tx_1[(i - 1)]] <- absorbing_outcome
+            data[absorbed_i, fit_y_columns_tx_0[(i - 1)]] <- absorbing_outcome
           }
         }
       }
@@ -1547,7 +1754,7 @@ tmle_compute <-
     # Compute ATE
     y_tx_1 <-
       predict(
-        object = outcome_regression,
+        object = outcome_regression_tx_1,
         newdata = 
           within(
             data = data,
@@ -1558,7 +1765,7 @@ tmle_compute <-
     
     y_tx_0 <-
       predict(
-        object = outcome_regression,
+        object = outcome_regression_tx_0,
         newdata = within(
           data = data,
           expr = {eval(parse(text = paste0(tx_column, " = 0")))}
@@ -1599,13 +1806,17 @@ tmle_compute <-
           y_tx_0 = y_tx_0,
           data = data,
           outcome_range = outcome_range,
-          outcome_formulas = outcome_formulas,
-          outcome_models = regression_sequence,
-          ipw = ipw,
+          outcome_formulas_tx_1 = outcome_formulas_tx_1,
+          outcome_formulas_tx_0 = outcome_formulas_tx_0,
+          outcome_models_tx_1 = regression_sequence_tx_1,
+          outcome_models_tx_0 = regression_sequence_tx_0,
+          ipw_tx_1 = ipw_tx_1,
+          ipw_tx_0 = ipw_tx_0,
           inverse_weights = inverse_weights,
           inverse_weight_formulas = inverse_weight_formulas,
           propensity_model = propensity_model,
-          propensity_score = propensity_score,
+          pr_tx_1 = pr_tx_1,
+          pr_tx_0 = pr_tx_0,
           imputed_outcomes = imputed_outcomes,
           impute_formulas = impute_formulas,
           imputation_args = imputation_args,
@@ -1650,9 +1861,12 @@ rctmle <-
     data,
     propensity_score_formula,
     inverse_weight_formulas,
+    inverse_weight_stratified = FALSE,
+    inverse_weight_prediction_tx = "counterfactual",
     outcome_formulas,
     outcome_type,
     estimand = "difference",
+    outcome_prediction_tx = "counterfactual",
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
@@ -1718,7 +1932,9 @@ rctmle <-
         impute_formulas = impute_formulas,
         impute_model = impute_model,
         impute_monotone = impute_monotone,
+        inverse_weight_prediction_tx = inverse_weight_prediction_tx,
         outcome_type = outcome_type,
+        outcome_prediction_tx = outcome_prediction_tx,
         outcome_range = outcome_range,
         absorbing_state = absorbing_state
       )
@@ -1749,9 +1965,15 @@ rctmle <-
       environment(tmle_formulas$inverse_weight_formulas[[i]]) <-
       environment(inverse_weight_formulas[[i]])
     
-    for (i in 1:length(tmle_formulas$outcome_formulas))
-      environment(tmle_formulas$outcome_formulas[[i]]) <-
-      environment(outcome_formulas[[i]])
+    for (i in 1:length(outcome_formulas)){
+      environment(tmle_formulas$outcome_formulas_tx_1[[i]]) <-
+        environment(outcome_formulas[[i]])
+      
+      environment(tmle_formulas$outcome_formulas_tx_0[[i]]) <-
+        environment(outcome_formulas[[i]])
+    }
+    
+      
     
     if(!is.null(impute_monotone)){
       if(impute_monotone){    
@@ -1769,8 +1991,15 @@ rctmle <-
           propensity_score_formula = propensity_score_formula,
           inverse_weight_formulas =
             tmle_formulas$inverse_weight_formulas,
-          outcome_formulas =
-            tmle_formulas$outcome_formulas,
+          inverse_weight_stratified =
+            inverse_weight_stratified,
+          inverse_weight_prediction_tx = inverse_weight_prediction_tx,
+          outcome_formulas_tx_1 =
+            tmle_formulas$outcome_formulas_tx_1,
+          outcome_formulas_tx_0 =
+            tmle_formulas$outcome_formulas_tx_0,
+          outcome_prediction_tx =
+            outcome_prediction_tx,
           outcome_type = outcome_type,
           estimand = estimand,
           outcome_range = outcome_range,

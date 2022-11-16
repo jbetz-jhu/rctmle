@@ -4,7 +4,7 @@ set.seed(12345)
 
 source(
   file.path(
-    # "https://raw.githubusercontent.com/jbetz-jhu/rctmle/glm/rctmle.r"
+    # "https://raw.githubusercontent.com/jbetz-jhu/rctmle/main/rctmle.r"
     "C:", "Users", "josh-jhbc", "Documents", "rctmle", "rctmle.r"
   )
 )
@@ -40,6 +40,8 @@ sim_data <-
     pr_dropout = rep(0.1, visits),
     dropout_cov = NULL
   )
+
+
 
 # Introduce non-monotone missingness
 non_monotone_rows <- which(sim_data$last_observed > 1)
