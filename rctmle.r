@@ -485,13 +485,17 @@ impute_gam <-
     data = data,
     impute_columns = impute_columns,
     impute_formulas,
-    verbose = FALSE,
+    stochastic = TRUE,
+    propagate = TRUE,
     model,
     family,
     donors = 10,
+    verbose = FALSE,
     ...
   ) {
-  
+    if(!propagate){
+      original_data <- data
+    }
     
     # Get names of variables to be imputed from LHS of formulas
     impute_formula_lhs <-
@@ -510,7 +514,12 @@ impute_gam <-
       impute_model <-
         mgcv::gam(
           formula = impute_formulas[[i]],
-          data = data,
+          data =
+            if(propagate){
+              data
+            } else {
+              original_data
+            },
           family = family,
           ...
         )
@@ -522,36 +531,41 @@ impute_gam <-
           object = impute_model,
           newdata = data[which(impute_columns[, i]),],
           type = "response",
-          se.fit = (model == "gaussian")
+          se.fit = (model == "gaussian" & stochastic)
         )
       
-      if(model == "gaussian"){
-        pred_interval <-
-          with(
-            pred_interval,
-            data.frame(fit, se.fit)
-          )
-        
-        # Sample from Prediction Interval
-        pred_interval$df <- impute_model$df.residual
-        pred_interval$sigma_sq <- impute_model$sig2
-        pred_interval$sd <- with(pred_interval, sqrt(se.fit^2 + sigma_sq))
-        pred_interval$lcl <-
-          with(pred_interval, fit + qt(p = 0.025, df = df)*sd)
-        pred_interval$ucl <-
-          with(pred_interval, fit + qt(p = 0.975, df = df)*sd)
-        
-        # Fill in imputed values
+      if(!stochastic){
         data[which(impute_columns[, i]), impute_formula_lhs[i]] <-
-          with(
-            pred_interval,
-            rnorm(
-              n = n_to_impute[i],
-              mean = fit,
-              sd = sd
-            )
-          )
+          pred_interval
+      } else if(model == "gaussian"){
         
+        if(stochastic){
+          pred_interval <-
+            with(
+              pred_interval,
+              data.frame(fit, se.fit)
+            )
+          
+          # Sample from Prediction Interval
+          pred_interval$df <- impute_model$df.residual
+          pred_interval$sigma_sq <- impute_model$sig2
+          pred_interval$sd <- with(pred_interval, sqrt(se.fit^2 + sigma_sq))
+          pred_interval$lcl <-
+            with(pred_interval, fit + qt(p = 0.025, df = df)*sd)
+          pred_interval$ucl <-
+            with(pred_interval, fit + qt(p = 0.975, df = df)*sd)
+          
+          # Fill in imputed values
+          data[which(impute_columns[, i]), impute_formula_lhs[i]] <-
+            with(
+              pred_interval,
+              rnorm(
+                n = n_to_impute[i],
+                mean = fit,
+                sd = sd
+              )
+            )
+        }
       } else {
         pred_interval <-
           data.frame(fit = pred_interval)
@@ -1244,6 +1258,7 @@ tmle_precheck <-
     x_columns,
     y_columns,
     tx_column,
+    impute_covariates = FALSE,
     impute_monotone = NULL,
     imputation_x = NULL,
     impute_formulas = NULL,
@@ -1266,7 +1281,7 @@ tmle_precheck <-
       colSums(is.na(data[, c(x_columns, tx_column, imputation_x)]))
     
     
-    if(sum(n_missing_covariates) > 0) {
+    if(sum(n_missing_covariates) > 0 & !impute_covariates) {
       n_missing_covariates <-
         n_missing_covariates[n_missing_covariates > 0]
       stop(
@@ -1275,7 +1290,8 @@ tmle_precheck <-
           paste0(names(n_missing_covariates),
                  " (", n_missing_covariates, ")"),
           collapse = ", "
-        )
+        ),
+        " - impute_covariates must be set to TRUE."
       )
     }
     
@@ -1502,7 +1518,7 @@ tmle_get_formulas <-
 tmle_compute <-
   function(
     data,
-    y_columns, tx_column,
+    y_columns, tx_column, x_columns,
     propensity_score_formula,
     inverse_weight_formulas,
     inverse_weight_stratified = FALSE,
@@ -1515,6 +1531,7 @@ tmle_compute <-
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
+    impute_covariates = FALSE,
     impute_monotone = FALSE,
     impute_formulas = NULL,
     impute_model = NULL,
@@ -1529,6 +1546,13 @@ tmle_compute <-
   
     impute_columns <-
       non_monotone(data = data, y_columns = y_columns)
+    
+    if(impute_covariates){
+      data <-
+        impute_covariates_mean_mode(
+          data = data, x_columns = x_columns
+        )
+    }
     
     if(impute_monotone){
       imputed_outcomes <-
@@ -1870,6 +1894,7 @@ rctmle <-
     outcome_range = NULL,
     absorbing_state = NULL,
     absorbing_outcome = NULL,
+    impute_covariates = FALSE,
     impute_monotone = NULL,
     impute_formulas = NULL,
     impute_model = NULL,
@@ -1928,6 +1953,7 @@ rctmle <-
         x_columns = tmle_args$x_columns,
         tx_column = tmle_args$tx_column,
         y_columns = tmle_args$y_columns,
+        impute_covariates = impute_covariates,
         imputation_x = tmle_args$imputation_x,
         impute_formulas = impute_formulas,
         impute_model = impute_model,
@@ -1988,6 +2014,7 @@ rctmle <-
         list(
           y_columns = tmle_args$y_columns,
           tx_column = tmle_args$tx_column,
+          x_columns = tmle_args$x_columns,
           propensity_score_formula = propensity_score_formula,
           inverse_weight_formulas =
             tmle_formulas$inverse_weight_formulas,
@@ -2005,6 +2032,7 @@ rctmle <-
           outcome_range = outcome_range,
           absorbing_state = absorbing_state,
           absorbing_outcome = absorbing_outcome,
+          impute_covariates = impute_covariates,
           impute_monotone = impute_monotone,
           impute_formulas = impute_formulas,
           imputation_args = imputation_args,
