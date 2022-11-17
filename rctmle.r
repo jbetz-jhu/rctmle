@@ -1382,6 +1382,8 @@ tmle_precheck <-
       }
       
       if(impute_monotone){
+        n_non_monotone <- colSums(non_monotone_outcomes)
+        
         # Find which variables must be imputed: Ensure temporal order
         non_monotone_vars <- names(which(n_non_monotone > 0))
         
