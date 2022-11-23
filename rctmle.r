@@ -491,6 +491,7 @@ impute_gam <-
     family,
     donors = 10,
     verbose = FALSE,
+    outcome_range = NULL,
     ...
   ) {
     if(!propagate){
@@ -535,8 +536,15 @@ impute_gam <-
         )
       
       if(!stochastic){
+        
+        if(!is.null(outcome_range)){
+          pred_interval <-
+            pmin(pmax(pred_interval, outcome_range[1]), outcome_range[2])
+        }
+        
         data[which(impute_columns[, i]), impute_formula_lhs[i]] <-
           pred_interval
+        
       } else if(model == "gaussian"){
         
         if(stochastic){
@@ -556,7 +564,7 @@ impute_gam <-
             with(pred_interval, fit + qt(p = 0.975, df = df)*sd)
           
           # Fill in imputed values
-          data[which(impute_columns[, i]), impute_formula_lhs[i]] <-
+          imputations <-
             with(
               pred_interval,
               rnorm(
@@ -565,6 +573,12 @@ impute_gam <-
                 sd = sd
               )
             )
+          
+          imputations <-
+            pmin(pmax(imputations, outcome_range[1]), outcome_range[2])
+          
+          data[which(impute_columns[, i]), impute_formula_lhs[i]] <-
+            imputations
         }
       } else {
         pred_interval <-
@@ -1373,9 +1387,9 @@ tmle_precheck <-
     if(sum(non_monotone_outcomes) > 0){
       
       # Non-monotone missingness - No handling of missingness specified
-      if(is.null(impute_monotone)){
+      if(length(impute_monotone) != 1){
         stop("Missingness is not monotone: ",
-             "`impute_monotone` must be FALSE or TRUE.")
+             "`impute_monotone` must be either FALSE or TRUE.")
       } else if(!(impute_monotone %in% c(FALSE, TRUE))){
         stop("Missingness is not monotone: ",
              "`impute_monotone` must be FALSE or TRUE.")
@@ -1827,7 +1841,9 @@ tmle_compute <-
     if(verbose){
       return(
         list(
-          ate = ate,
+          "ATE: Estimate" = ate,
+          "E[Y|A=1]: Estimate" = mean(y_tx_1),
+          "E[Y|A=0]: Estimate" = mean(y_tx_0),
           y_tx_1 = y_tx_1,
           y_tx_0 = y_tx_0,
           data = data,
@@ -1850,7 +1866,11 @@ tmle_compute <-
         )
       )
     } else {
-      return(ate)
+      return(
+        c("ATE: Estimate" = ate,
+          "E[Y|A=1]: Estimate" = mean(y_tx_1),
+          "E[Y|A=0]: Estimate" = mean(y_tx_0))
+        )
     }
   }
 
@@ -1897,7 +1917,7 @@ rctmle <-
     absorbing_state = NULL,
     absorbing_outcome = NULL,
     impute_covariates = FALSE,
-    impute_monotone = NULL,
+    impute_monotone = FALSE,
     impute_formulas = NULL,
     impute_model = NULL,
     imputation_args = NULL,
@@ -1912,10 +1932,10 @@ rctmle <-
     if(!is.null(outcome_type)) outcome_type <- tolower(outcome_type)
     if(!is.null(impute_model)) impute_model <- tolower(impute_model)
     
-    arg_list <- as.list(substitute(list(...)))[-1L]
+    # arg_list <- as.list(substitute(list(...)))[-1L]
+    arg_list <- list()
     
     if(ci) {
-      verbose <- FALSE # Override verbose when bootstrapping
       if(!bootstrap_type %in% c("bca", "norm", "basic", "perc")) {
         stop("Unrecognized bootstrap method: ", bootstrap_type)
       }
@@ -2000,16 +2020,13 @@ rctmle <-
       environment(tmle_formulas$outcome_formulas_tx_0[[i]]) <-
         environment(outcome_formulas[[i]])
     }
-    
-      
-    
-    if(!is.null(impute_monotone)){
-      if(impute_monotone){    
-        for (i in 1:length(precheck_results$impute_formulas))
-          environment(precheck_results$impute_formulas[[i]]) <-
-            environment(impute_formulas[[i]])
-      }
+
+    if(impute_monotone){    
+      for (i in 1:length(precheck_results$impute_formulas))
+        environment(precheck_results$impute_formulas[[i]]) <-
+          environment(impute_formulas[[i]])
     }
+
     
     arg_list <-
       c(
@@ -2045,10 +2062,16 @@ rctmle <-
         arg_list
       )
     
+    tmle_result <-
+      tmle_boot_wrap(
+        data = data,
+        tmle_args = arg_list
+      )
     
     if(ci){
+      arg_list$verbose <- FALSE
       
-      tmle_boot <-
+      tmle_boot <- 
         boot(
           data = data,
           statistic = tmle_boot_wrap,
@@ -2057,31 +2080,71 @@ rctmle <-
             arg_list
         )
       
-      tmle_boot_ci <-
+      tmle_boot_se <- 
+        apply(
+          X = tmle_boot$t,
+          MAR = 2,
+          FUN = sd
+        )
+      
+      tmle_boot_ci_ate <-
         boot.ci(
           boot.out = tmle_boot,
           conf  = (1 - alpha),
-          type = bootstrap_type
+          type = bootstrap_type,
+          index = 1
         )
       
-      lcl_ucl <-
-        tail(x = tmle_boot_ci[bootstrap_type][[1]][1,], 2)
-      
-      return(
-        c(
-          estimate = tmle_boot$t0,
-          se = sd(tmle_boot$t),
-          lcl = lcl_ucl[1],
-          ucl = lcl_ucl[2],
-          alpha = alpha
+      tmle_boot_ci_y0_a_1 <-
+        boot.ci(
+          boot.out = tmle_boot,
+          conf  = (1 - alpha),
+          type = bootstrap_type,
+          index = 2
         )
-      )
+      
+      tmle_boot_ci_y0_a_0 <-
+        boot.ci(
+          boot.out = tmle_boot,
+          conf  = (1 - alpha),
+          type = bootstrap_type,
+          index = 3
+        )
+      
+      lcl_ucl_ate <-
+        tail(x = tmle_boot_ci_ate[bootstrap_type][[1]][1,], 2)
+      lcl_ucl_y0_a_1 <-
+        tail(x = tmle_boot_ci_y0_a_1[bootstrap_type][[1]][1,], 2)
+      lcl_ucl_y0_a_0 <-
+        tail(x = tmle_boot_ci_y0_a_0[bootstrap_type][[1]][1,], 2)
+      
+      return_result <-
+        c("ATE: Estimate" = as.numeric(tmle_result[1]),
+          "ATE: SE" = tmle_boot_se[1],
+          "ATE: LCL" = lcl_ucl_ate[1],
+          "ATE: UCL" = lcl_ucl_ate[2],
+          "E[Y|A=1]: Estimate" = as.numeric(tmle_result[2]),
+          "E[Y|A=1]: SE" = tmle_boot_se[2],
+          "E[Y|A=1]: LCL" = lcl_ucl_y0_a_1[1],
+          "E[Y|A=1]: UCL" = lcl_ucl_y0_a_1[2],
+          "E[Y|A=0]: Estimate" = as.numeric(tmle_result[3]),
+          "E[Y|A=0]: SE" = tmle_boot_se[2],
+          "E[Y|A=0]: LCL" = lcl_ucl_y0_a_0[1],
+          "E[Y|A=0]: UCL" = lcl_ucl_y0_a_0[2]
+        )
+      
+      if(verbose) {
+        return_result <-
+          c(
+            list(),
+            return_result,
+            tmle_boot,
+            tmle_result[setdiff(x = names(tmle_result), y = names(return_result))]
+          )
+      }
+      
+      return(return_result)
     } else {
-      return(
-        tmle_boot_wrap(
-          data = data,
-          tmle_args = arg_list
-        )
-      )
+      return(tmle_result)
     }
   }
