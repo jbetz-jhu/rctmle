@@ -2149,3 +2149,106 @@ rctmle <-
       return(tmle_result)
     }
   }
+
+
+boot_p_value <-
+  function(
+    boot_object,
+    ci_method = "bca",
+    index = 1,
+    alpha_max = 1,
+    alpha_min = 10^-5,
+    tolerance = 0.001,
+    max_evaluations = 40,
+    verbose = FALSE
+  ){
+    
+    converged <- FALSE
+    continue <- TRUE
+    i <- n_rejected <- n_fail_to_reject <- 0
+    
+    all_ci_results <-
+      data.frame(
+        alpha = rep(NA, max_evaluations),
+        lcl = NA,
+        ucl = NA,
+        rejected = NA
+      )
+    
+    current_min <- alpha_min
+    current_max <- alpha_max
+    current_alpha <- mean(c(alpha_max, alpha_min))
+    
+    while(continue) {
+      i <- i +1
+      
+      all_ci_results$alpha[i] <- current_alpha
+      
+      ci_result <-
+        boot.ci(
+          boot.out = boot_object,
+          conf = 1 - current_alpha,
+          type = ci_method,
+          index = index
+        )
+      
+      all_ci_results[i, c("lcl", "ucl")] <- 
+        tail(ci_result[[ci_method]][1,], 2)
+      
+      rejected <- all_ci_results$rejected[i] <-
+        with(all_ci_results, sign(lcl[i]) == sign(ucl[i]))
+      
+      if(rejected) {
+        # Decrease Alpha
+        n_rejected <- n_rejected + 1
+        current_max <- min(c(current_alpha, current_max))
+        current_alpha <-
+          current_alpha - c(current_alpha - current_min)/2
+        
+      } else {
+        # Increase Alpha
+        n_fail_to_reject <- n_fail_to_reject + 1
+        current_min <- max(c(current_alpha, current_min))
+        current_alpha <-
+          current_alpha + c(current_max - current_alpha)/2
+      }
+      
+      
+      # Evaluate convergence
+      if(i > 1){
+        diff_alpha <- abs(diff(all_ci_results$alpha[c(i-1, i)]))
+        
+        if(n_fail_to_reject > 4 & n_rejected > 4 & diff_alpha <= tolerance) {
+          converged <- TRUE
+          continue <- FALSE
+        }
+      }
+      
+      if(i >= max_evaluations){
+        continue <- FALSE
+        warning("Iteration limit reached without convergence.")
+      }
+    }
+    
+    boot_p_value <- min(subset(all_ci_results, rejected)$alpha)
+    
+    if(verbose){
+      return(
+        list(
+          boot_p_value = boot_p_value,
+          converged = converged,
+          boot_object = boot_object,
+          ci_method = ci_method,
+          index = index,
+          alpha_max = alpha_max,
+          alpha_min = alpha_min,
+          tolerance = tolerance,
+          max_evaluations = 40,
+          n_evaluations = i,
+          all_ci_results = all_ci_results
+        )
+      )
+    } else {
+      return(boot_p_value)
+    }
+  }
