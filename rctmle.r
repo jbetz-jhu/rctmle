@@ -2138,7 +2138,7 @@ rctmle <-
           c(
             list(),
             return_result,
-            tmle_boot,
+            tmle_boot = tmle_boot,
             tmle_result[setdiff(x = names(tmle_result), y = names(return_result))]
           )
       }
